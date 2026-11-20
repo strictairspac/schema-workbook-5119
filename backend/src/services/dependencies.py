@@ -11,10 +11,13 @@ def validate(db,data,exclude=None):
     count=db.scalar(select(func.count()).select_from(Dependency).where(Dependency.relation_id==data.relation_id))
     if not exclude and count>=64:raise HTTPException(422,'最多64条函数依赖，请合并后重试')
 def create(db,data,user):
-    validate(db,data);return save(db,Dependency(**data.model_dump()),user,'创建函数依赖')
+    validate(db,data)
+    obj=Dependency(**data.model_dump())
+    return save(db,obj,user,'创建函数依赖',lambda:[{'table':'dependency','op':'insert','id':obj.id,'before':None,'after':record(obj)}])
 def update(db,ident,data,user):
     obj=db.get(Dependency,ident)
     if not obj:raise HTTPException(404,'依赖不存在')
     validate(db,data,ident)
+    before=record(obj)
     for k,v in data.model_dump().items():setattr(obj,k,v)
-    return save(db,obj,user,'更新函数依赖')
+    return save(db,obj,user,'更新函数依赖',lambda:[{'table':'dependency','op':'update','id':obj.id,'before':before,'after':record(obj)}])

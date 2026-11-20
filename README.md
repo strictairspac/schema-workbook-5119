@@ -30,6 +30,18 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 另有 `NL-1117-B` 的循环依赖 A→B/B→A与独立属性C，候选键AC/BC；`NL-1117-C` 没有确认依赖，完整属性集作为唯一候选键，不凭空猜测业务规则。
 
+## 恢复演练（Point-in-Time Recovery）
+
+草案改错了，可以在「恢复演练」页找回指定提交之前的样子，线上照常并发编辑。
+
+1. **事务日志**：草案/依赖的每次写入与业务变更同事务记录一条 `txn_logs`（整笔操作的前后镜像）。提交序号由计数器行锁在提交前分配，锁持有到事务结束，因此序号顺序即实际提交顺序；回滚的事务整笔消失、不占序号（回滚不算）。报告、审计、登录不入日志。
+2. **数据库备份**：`backups` 保存全部草案与依赖的快照及已覆盖的提交号；持计数器锁取一致切点，快照恰好包含不大于该序号的全部已提交事务。seed 首次启动创建基线备份。
+3. **隔离库回放**：演练把备份装入 `drill_*` 隔离表，按提交序号回放 `(备份序号, 目标序号)` 区间的事务——目标及之后才提交的事务整笔排除。回放只写隔离表，不锁线上表。依赖挪过草案（`relation_id` 变更）随回放还原当时的归属。
+4. **断档与核对**：序号区间缺号或日志与备份不衔接即标 `unrecoverable`（不可恢复）；回放完成后做行数对账与引用/属性完整性核对，通过才置 `recovered` 开放查阅，之前一律 `pending`（待恢复）。演练只开放选中的草案。
+5. **续跑**：每笔事务回放后提交检查点（`applied_seq`），中断后「续跑」从检查点继续，已回放的提交跳过，重试不重复回放；已终态的演练重试直接返回现状。
+
+接口：`GET/POST /backups`、`GET /txnlogs`（写角色）、`GET/POST /drills`、`POST /drills/{id}/resume`、`GET /drills/{id}`。创建演练/备份需 operator 或 admin，查看演练与已恢复内容全角色可读。
+
 ## 算法说明
 
 Python真算，MySQL保存草案/依赖与结果，Redis传递任务，独立worker执行。
@@ -56,7 +68,7 @@ Python真算，MySQL保存草案/依赖与结果，Redis传递任务，独立wor
 
 目录：`frontend/src/{api,stores,types,components/common,hooks,pages,router,utils,constants}`；`backend/src/{routes,controllers,services,models,schemas,middlewares,utils,constants,config}`；`backend/scripts/seed_demo.py`；`backend/migrations/001_initial.sql`。每核心实体贯穿模型/schema/service/route/API/store/page。组件table/badge/frame复用，hooks/session/feedback和utils/forms/html共用；request_id/errors双后端中间件。
 
-枚举：角色admin/operator/viewer、任务queued/running/completed/failed；前后端定义位于 `backend/src/constants/enums.py` 和 `frontend/src/constants/enums.js`，security/reports、frame/badge消费；worker持久化状态。
+枚举：角色admin/operator/viewer、任务queued/running/completed/failed、演练pending/recovered/unrecoverable；前后端定义位于 `backend/src/constants/enums.py` 和 `frontend/src/constants/enums.js`，security/reports、frame/badge消费；worker持久化状态。
 
 环境变量见.env.example：COMPOSE_PROJECT_NAME、FRONTEND_PORT/BACKEND_PORT/DB_PORT、DB_PASSWORD、JWT_SECRET、SEED_DEMO。默认密码仅本地演示，JWT8小时。seed按自然键只补缺失关系及初始依赖，不覆盖用户修改。schema由SQLAlchemy metadata.create_all初始化，无在线迁移引擎。
 

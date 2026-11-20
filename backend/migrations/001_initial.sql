@@ -1,3 +1,6 @@
 -- Initial schema is applied idempotently by SQLAlchemy metadata.create_all.
 -- Authoritative models: src/models/entities.py (relations, dependencies, reports,
--- audit_logs and users). Dependencies/report snapshots are persisted as MySQL JSON.
+-- audit_logs, users, txn_counter, txn_logs, backups, drills, drill_relations and
+-- drill_dependencies). Dependencies/report snapshots are persisted as MySQL JSON.
+-- txn_logs records committed relation/dependency transactions in commit order;
+-- drills replay them into the isolated drill_* tables for point-in-time recovery.

@@ -1,6 +1,6 @@
 from sqlalchemy import select,func
 from src.config.database import Session,Base,engine
-from src.models.entities import User,Relation,Dependency,Report
+from src.models.entities import User,Relation,Dependency,Report,TxnCounter,Backup
 from src.utils.security import password_hash
 
 def seed():
@@ -15,6 +15,11 @@ def seed():
             if rel:continue
             rel=Relation(code=code,title=title,attributes=attrs,note='南麓材料实验室 · 09:15 委托表复核');db.add(rel);db.flush()
             for lhs,rhs in fds:db.add(Dependency(relation_id=rel.id,lhs=lhs,rhs=rhs,note='业务确认依赖'))
+        if not db.get(TxnCounter,1):db.add(TxnCounter(id=1,seq=0))
         db.commit()
         print({cls.__tablename__:db.scalar(select(func.count()).select_from(cls)) for cls in (User,Relation,Dependency,Report)})
+        if not db.scalar(select(func.count()).select_from(Backup)):
+            from src.services.backups import create
+            create(db,'seed')
+            print('baseline backup created at commit_seq 0')
 if __name__=='__main__':seed()
